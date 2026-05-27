@@ -1,14 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { ethers } from "ethers";
-import { CONTRACT_ADDRESS, CONTRACT_ABI } from "../constants";
+import { CONTRACT_ADDRESS, CONTRACT_ABI, RPC_URL } from "../constants";
+import CopyButton from "../components/CopyButton";
+import QRScanner from "../components/QRScanner";
 
-export default function VerifyPage() {
+function VerifyContent() {
+  const searchParams = useSearchParams();
   const [file, setFile] = useState(null);
+  const [manualHash, setManualHash] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [mode, setMode] = useState("upload"); // "upload" | "hash" | "scan"
+  const hasAutoVerified = useRef(false);
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -18,7 +25,70 @@ export default function VerifyPage() {
     }
   };
 
-  const handleVerify = async () => {
+  const getContract = useCallback(() => {
+    let provider;
+    if (typeof window !== "undefined" && window.ethereum) {
+      provider = new ethers.BrowserProvider(window.ethereum);
+    } else {
+      provider = new ethers.JsonRpcProvider(RPC_URL);
+    }
+    return new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+  }, []);
+
+  const verifyByHash = useCallback(async (hash) => {
+    setIsVerifying(true);
+    setResult(null);
+    setError("");
+
+    try {
+      const contract = getContract();
+      const hashWithPrefix = hash.startsWith("0x") ? hash : "0x" + hash;
+      const cert = await contract.verifyCertificate(hashWithPrefix);
+
+      if (!cert.exists) {
+        setResult({
+          status: "Invalid",
+          icon: "❌",
+          message: "This certificate hash was not found on the blockchain. The document may be forged or tampered with.",
+        });
+      } else if (!cert.isValid) {
+        setResult({
+          status: "Revoked",
+          icon: "⚠️",
+          message: "This certificate was issued but has since been revoked by the issuing institution.",
+          details: cert,
+          hash: hashWithPrefix,
+        });
+      } else {
+        setResult({
+          status: "Valid",
+          icon: "✅",
+          message: "Authenticity confirmed — this document matches the immutable record on the blockchain.",
+          details: cert,
+          hash: hashWithPrefix,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Failed to verify. Ensure the blockchain node is running and accessible.");
+    } finally {
+      setIsVerifying(false);
+    }
+  }, [getContract]);
+
+  // Auto-verify if hash is in URL query params (only once)
+  useEffect(() => {
+    if (hasAutoVerified.current) return;
+    const hashFromUrl = searchParams.get("hash");
+    if (hashFromUrl) {
+      hasAutoVerified.current = true;
+      setManualHash(hashFromUrl);
+      setMode("hash");
+      verifyByHash(hashFromUrl);
+    }
+  }, [searchParams, verifyByHash]);
+
+  const handleVerifyFile = async () => {
     if (!file) {
       setError("Please select a file to verify.");
       return;
@@ -29,144 +99,248 @@ export default function VerifyPage() {
     setError("");
 
     try {
-      // 1. Get the hash of the uploaded document via the same API route
-      // We only need the hash, we don't need to save the IPFS mock cid, but the route does it anyway.
       const formData = new FormData();
       formData.append("file", file);
 
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
+      // Use the hash-only API route (no IPFS upload)
+      const res = await fetch("/api/hash", { method: "POST", body: formData });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
 
-      // 2. Query the blockchain using ethers
-      // Using a standard provider (since we just need to read, no wallet required, but we'll use window.ethereum if available or a public RPC)
-      let provider;
-      if (typeof window.ethereum !== "undefined") {
-        provider = new ethers.BrowserProvider(window.ethereum);
-      } else {
-        // Fallback to local node if no wallet
-        provider = new ethers.JsonRpcProvider("http://localhost:8545");
-      }
-
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
-      
-      const cert = await contract.verifyCertificate(data.hash);
-      
-      if (!cert.exists) {
-        setResult({
-          status: "Invalid",
-          message: "This certificate hash was not found on the blockchain. It may be forged or tampered with."
-        });
-      } else if (!cert.isValid) {
-        setResult({
-          status: "Revoked",
-          message: "This certificate was issued but has since been revoked by the issuing institution.",
-          details: cert
-        });
-      } else {
-        setResult({
-          status: "Valid",
-          message: "Authenticity Verified. This document exactly matches the record on the blockchain.",
-          details: cert
-        });
-      }
-
+      await verifyByHash(data.hash);
     } catch (err) {
       console.error(err);
-      setError("Failed to verify. Ensure the local blockchain is running and MetaMask is connected to the right network.");
-    } finally {
+      setError(err.message || "Failed to compute file hash.");
       setIsVerifying(false);
     }
   };
 
+  const handleVerifyHash = async () => {
+    if (!manualHash) {
+      setError("Please enter a hash.");
+      return;
+    }
+    await verifyByHash(manualHash);
+  };
+
+  const handleQRScan = (decodedText) => {
+    try {
+      const url = new URL(decodedText);
+      const hash = url.searchParams.get("hash");
+      if (hash) {
+        setManualHash(hash);
+        setMode("hash");
+        verifyByHash(hash);
+      } else {
+        setError("QR code does not contain a valid verification link.");
+      }
+    } catch {
+      // Not a URL — maybe it's a raw hash
+      if (decodedText.length >= 64) {
+        setManualHash(decodedText);
+        setMode("hash");
+        verifyByHash(decodedText);
+      } else {
+        setError("QR code does not contain a valid hash.");
+      }
+    }
+  };
+
+  const statusStyles = {
+    Valid: "verify-result-valid",
+    Invalid: "verify-result-invalid",
+    Revoked: "verify-result-revoked",
+  };
+
   return (
     <div className="container animate-fade-in">
-      <h1 className="title" style={{ textAlign: 'center' }}>Verify Certificate</h1>
-      <p className="subtitle" style={{ textAlign: 'center' }}>Upload a document to check its authenticity against the blockchain record.</p>
+      <div style={{ textAlign: "center" }}>
+        <h1 className="page-title">Verify a Certificate</h1>
+        <p className="page-subtitle" style={{ margin: "0 auto 2.5rem" }}>
+          Upload a document, enter a hash, or scan a QR code to instantly check its authenticity on the blockchain.
+        </p>
+      </div>
 
-      <div className="glass-card" style={{ maxWidth: '600px', margin: '0 auto' }}>
-        <div className="form-group">
-          <div className="file-upload" onClick={() => document.getElementById('file-upload-verify').click()}>
-            <input 
-              id="file-upload-verify" 
-              type="file" 
-              style={{ display: 'none' }} 
-              onChange={handleFileChange}
-              accept=".pdf,.png,.jpg,.jpeg"
-            />
-            {file ? (
-              <div style={{ color: 'var(--primary-color)', fontWeight: 'bold' }}>
-                📄 {file.name}
-              </div>
-            ) : (
-              <>
-                <div style={{ fontSize: '2rem' }}>🔍</div>
-                <p>Click to upload document for verification</p>
-              </>
-            )}
-          </div>
+      <div className="glass-card-static max-w-md mx-auto">
+        {/* Mode Tabs */}
+        <div className="tabs" style={{ marginBottom: "1.5rem" }}>
+          <button
+            className={`tab ${mode === "upload" ? "active" : ""}`}
+            onClick={() => { setMode("upload"); setResult(null); setError(""); }}
+          >
+            📄 Upload File
+          </button>
+          <button
+            className={`tab ${mode === "hash" ? "active" : ""}`}
+            onClick={() => { setMode("hash"); setResult(null); setError(""); }}
+          >
+            🔑 Enter Hash
+          </button>
+          <button
+            className={`tab ${mode === "scan" ? "active" : ""}`}
+            onClick={() => { setMode("scan"); setResult(null); setError(""); }}
+          >
+            📷 Scan QR
+          </button>
         </div>
 
-        <button 
-          className="btn btn-primary" 
-          style={{ width: '100%', marginTop: '1rem' }}
-          onClick={handleVerify}
-          disabled={isVerifying || !file}
-        >
-          {isVerifying ? "Verifying against Blockchain..." : "Verify Authenticity"}
-        </button>
+        {/* Upload Mode */}
+        {mode === "upload" && (
+          <div className="animate-fade-in">
+            <div className="form-group">
+              <div
+                className="file-upload"
+                onClick={() => document.getElementById("file-upload-verify").click()}
+              >
+                <input
+                  id="file-upload-verify"
+                  type="file"
+                  style={{ display: "none" }}
+                  onChange={handleFileChange}
+                  accept=".pdf,.png,.jpg,.jpeg"
+                />
+                {file ? (
+                  <div className="file-upload-selected">📄 {file.name}</div>
+                ) : (
+                  <>
+                    <span className="file-upload-icon">🔍</span>
+                    <p className="file-upload-text">Click to upload document for verification</p>
+                    <p className="file-upload-hint">PDF, PNG, JPG — Max 10MB</p>
+                  </>
+                )}
+              </div>
+            </div>
 
+            <button
+              className="btn btn-primary w-full"
+              onClick={handleVerifyFile}
+              disabled={isVerifying || !file}
+            >
+              {isVerifying ? (
+                <>
+                  <span className="spinner spinner-sm" /> Verifying...
+                </>
+              ) : (
+                "Verify Authenticity"
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Hash Mode */}
+        {mode === "hash" && (
+          <div className="animate-fade-in">
+            <div className="form-group">
+              <label className="form-label">Certificate Hash (SHA-256)</label>
+              <input
+                type="text"
+                className="form-input form-input-mono"
+                placeholder="0xb94d27b99..."
+                value={manualHash}
+                onChange={(e) => setManualHash(e.target.value)}
+              />
+            </div>
+
+            <button
+              className="btn btn-primary w-full"
+              onClick={handleVerifyHash}
+              disabled={isVerifying || !manualHash}
+            >
+              {isVerifying ? (
+                <>
+                  <span className="spinner spinner-sm" /> Verifying...
+                </>
+              ) : (
+                "Verify Hash"
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* QR Scan Mode */}
+        {mode === "scan" && (
+          <div className="animate-fade-in">
+            <QRScanner
+              onScan={handleQRScan}
+              onError={(msg) => setError(msg)}
+            />
+          </div>
+        )}
+
+        {/* Error */}
         {error && (
-          <div style={{ marginTop: '1rem', color: 'var(--danger)', textAlign: 'center' }}>
+          <div className="message-box message-error mt-2 animate-fade-in">
             {error}
           </div>
         )}
 
+        {/* Result */}
         {result && (
-          <div className="animate-fade-in" style={{ 
-            marginTop: '2rem', 
-            padding: '1.5rem', 
-            borderRadius: '12px', 
-            background: result.status === 'Valid' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-            border: `1px solid ${result.status === 'Valid' ? 'var(--success)' : 'var(--danger)'}`,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-              <div style={{ fontSize: '2rem' }}>
-                {result.status === 'Valid' ? '✅' : '❌'}
+          <div className={`verify-result ${statusStyles[result.status]} animate-fade-in`}>
+            <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+              <div className="verify-icon">{result.icon}</div>
+              <div
+                className="verify-status"
+                style={{
+                  color:
+                    result.status === "Valid"
+                      ? "var(--success)"
+                      : result.status === "Revoked"
+                      ? "var(--warning)"
+                      : "var(--danger)",
+                }}
+              >
+                {result.status}
               </div>
-              <div>
-                <h3 style={{ 
-                  fontSize: '1.25rem', 
-                  color: result.status === 'Valid' ? 'var(--success)' : 'var(--danger)',
-                  fontWeight: 'bold'
-                }}>
-                  {result.status}
-                </h3>
-                <p style={{ color: 'var(--text-main)', marginTop: '0.25rem' }}>{result.message}</p>
-              </div>
+              <p className="verify-message">{result.message}</p>
             </div>
 
             {result.details && (
-              <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: `1px dashed ${result.status === 'Valid' ? 'var(--success)' : 'var(--danger)'}` }}>
-                <h4 style={{ color: 'var(--text-muted)', marginBottom: '0.5rem', fontSize: '0.875rem', textTransform: 'uppercase' }}>On-Chain Details</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '0.5rem', fontSize: '0.875rem' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Issuer:</span>
-                  <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{result.details.issuer}</span>
-                  <span style={{ color: 'var(--text-muted)' }}>IPFS CID:</span>
-                  <a 
-                    href={`https://gateway.pinata.cloud/ipfs/${result.details.cid}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ fontFamily: 'monospace', wordBreak: 'break-all', color: 'var(--primary-color)', textDecoration: 'underline' }}
-                  >
-                    {result.details.cid}
-                  </a>
-                  <span style={{ color: 'var(--text-muted)' }}>Issued On:</span>
-                  <span>{new Date(Number(result.details.timestamp) * 1000).toLocaleString()}</span>
+              <div style={{
+                paddingTop: "1.25rem",
+                borderTop: "1px dashed var(--border-default)",
+              }}>
+                <h4 style={{
+                  color: "var(--text-tertiary)",
+                  fontSize: "0.75rem",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  marginBottom: "0.75rem",
+                  fontWeight: "600",
+                }}>
+                  On-Chain Details
+                </h4>
+
+                <div className="detail-grid">
+                  <span className="detail-label">Hash</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                    <span className="detail-value-mono">
+                      {result.hash.substring(0, 14)}...{result.hash.slice(-8)}
+                    </span>
+                    <CopyButton text={result.hash} />
+                  </div>
+
+                  <span className="detail-label">Issuer</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                    <span className="detail-value-mono">{result.details.issuer}</span>
+                    <CopyButton text={result.details.issuer} />
+                  </div>
+
+                  <span className="detail-label">IPFS CID</span>
+                  <div className="detail-value">
+                    <a
+                      href={`https://gateway.pinata.cloud/ipfs/${result.details.cid}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {result.details.cid}
+                    </a>
+                  </div>
+
+                  <span className="detail-label">Issued On</span>
+                  <span className="detail-value">
+                    {new Date(Number(result.details.timestamp) * 1000).toLocaleString()}
+                  </span>
                 </div>
               </div>
             )}
@@ -174,5 +348,18 @@ export default function VerifyPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function VerifyPage() {
+  return (
+    <Suspense fallback={
+      <div className="container animate-fade-in" style={{ textAlign: "center" }}>
+        <h1 className="page-title">Verify a Certificate</h1>
+        <p className="page-subtitle" style={{ margin: "0 auto" }}>Loading...</p>
+      </div>
+    }>
+      <VerifyContent />
+    </Suspense>
   );
 }

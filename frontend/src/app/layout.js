@@ -1,37 +1,41 @@
-import { Inter } from "next/font/google";
+import { Plus_Jakarta_Sans, Inter } from "next/font/google";
 import "./globals.css";
+import NavBar from "./components/NavBar";
+import { ToastProvider } from "./components/Toast";
 
-const inter = Inter({ subsets: ["latin"] });
+const plusJakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-heading",
+});
+
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-body",
+});
 
 export const metadata = {
-  title: "DCVS - Decentralized Certificate Verification",
-  description: "Secure, blockchain-based certificate issuance and verification.",
+  title: "Verity — Blockchain Certificate Verification",
+  description:
+    "Issue, verify, and manage tamper-proof digital certificates secured by blockchain technology and IPFS.",
+  keywords: "blockchain, certificate, verification, IPFS, decentralized, Web3, Verity",
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <head>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-      </head>
-      <body className={inter.className}>
-        <nav>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <div style={{ width: '32px', height: '32px', background: 'var(--primary-color)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: 'white' }}>
-              D
-            </div>
-            <h1 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>DCVS</h1>
-          </div>
-          <div className="nav-links">
-            <a href="/" className="nav-link">Home</a>
-            <a href="/admin" className="nav-link">Admin</a>
-            <a href="/verify" className="nav-link">Verify</a>
-            <a href="/student" className="nav-link">Student</a>
-          </div>
-        </nav>
-        <main style={{ flex: 1, padding: '2rem 0' }}>
-          {children}
-        </main>
+      <body className={`${plusJakarta.variable} ${inter.variable} ${inter.className}`}>
+        <ToastProvider>
+          <NavBar />
+          <main style={{ flex: 1 }}>{children}</main>
+          <footer className="footer">
+            <p>
+              Verity — Blockchain-Powered Certificate Verification ·{" "}
+              Secured by Ethereum & IPFS
+            </p>
+          </footer>
+        </ToastProvider>
       </body>
     </html>
   );
