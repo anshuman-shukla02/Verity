@@ -526,8 +526,8 @@ export default function AdminPage() {
                   size={180}
                 />
                 <div className="mt-1" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.25rem" }}>
-                  <span className="font-mono text-xs text-muted truncate" style={{ maxWidth: 200 }}>
-                    {lastIssuedHash}
+                  <span className="font-mono text-xs text-muted">
+                    {lastIssuedHash.substring(0, 12)}...{lastIssuedHash.substring(lastIssuedHash.length - 10)}
                   </span>
                   <CopyButton text={lastIssuedHash} />
                 </div>

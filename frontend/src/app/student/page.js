@@ -124,7 +124,9 @@ export default function StudentPage() {
               <div className="detail-grid">
                 <span className="detail-label">Issuer</span>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                  <span className="detail-value-mono">{certData.issuer}</span>
+                  <span className="detail-value-mono">
+                    {certData.issuer.substring(0, 8)}...{certData.issuer.substring(certData.issuer.length - 6)}
+                  </span>
                   <CopyButton text={certData.issuer} />
                 </div>
 
@@ -139,8 +141,15 @@ export default function StudentPage() {
                     href={`https://gateway.pinata.cloud/ipfs/${certData.cid}`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    className="detail-value-mono"
+                    style={{
+                      color: "var(--text-link)",
+                      textDecoration: "underline",
+                      textDecorationColor: "var(--primary-200)",
+                      textUnderlineOffset: "2px",
+                    }}
                   >
-                    {certData.cid}
+                    {certData.cid.substring(0, 12)}...{certData.cid.substring(certData.cid.length - 10)}
                   </a>
                 </div>
               </div>
@@ -189,10 +198,12 @@ export default function StudentPage() {
                   </div>
                   <hr className="cert-preview-divider" />
                   <div className="cert-preview-label">Verification Hash</div>
-                  <div className="cert-preview-value">{certData.hash}</div>
+                  <div className="cert-preview-value">
+                    {certData.hash.substring(0, 14)}...{certData.hash.substring(certData.hash.length - 12)}
+                  </div>
                   <div className="cert-preview-label">Issuer Address</div>
                   <div className="cert-preview-value" style={{ color: "var(--success)" }}>
-                    {certData.issuer}
+                    {certData.issuer.substring(0, 10)}...{certData.issuer.substring(certData.issuer.length - 8)}
                   </div>
                 </div>
               ) : (

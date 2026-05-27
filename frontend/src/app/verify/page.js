@@ -322,7 +322,9 @@ function VerifyContent() {
 
                   <span className="detail-label">Issuer</span>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                    <span className="detail-value-mono">{result.details.issuer}</span>
+                    <span className="detail-value-mono">
+                      {result.details.issuer.substring(0, 8)}...{result.details.issuer.substring(result.details.issuer.length - 6)}
+                    </span>
                     <CopyButton text={result.details.issuer} />
                   </div>
 
@@ -332,8 +334,15 @@ function VerifyContent() {
                       href={`https://gateway.pinata.cloud/ipfs/${result.details.cid}`}
                       target="_blank"
                       rel="noopener noreferrer"
+                      className="detail-value-mono"
+                      style={{
+                        color: "var(--text-link)",
+                        textDecoration: "underline",
+                        textDecorationColor: "var(--primary-200)",
+                        textUnderlineOffset: "2px",
+                      }}
                     >
-                      {result.details.cid}
+                      {result.details.cid.substring(0, 12)}...{result.details.cid.substring(result.details.cid.length - 10)}
                     </a>
                   </div>
 
