@@ -1,9 +1,12 @@
 // Try to load the auto-generated deployed address from the deploy script
 let deployedAddress = null;
 try {
-  // We use a dynamic string to prevent Webpack from statically bundle-checking the file during Vercel builds
-  const addressData = require("./deployed-address" + ".json");
-  deployedAddress = addressData.address;
+  // Only attempt to load the local file in development mode.
+  // During production builds (Vercel), Webpack will tree-shake this block out completely.
+  if (process.env.NODE_ENV === "development") {
+    const addressData = require("./deployed-address.json");
+    deployedAddress = addressData.address;
+  }
 } catch {
   // File doesn't exist yet — use env var or default
 }
