@@ -271,6 +271,15 @@ export default function AdminPage() {
       toast.warning("No File", "Please select a file first.");
       return;
     }
+
+    // Vercel Serverless Functions have a strict payload limit of 4.5MB.
+    // Digital certificates are typically 100KB - 1MB, so this is plenty of space.
+    const MAX_FILE_SIZE = 4.5 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      toast.warning("File Too Large", "Due to hosting limits, files must be under 4.5MB. Please compress your PDF or use a smaller file.");
+      return;
+    }
+
     if (!account) {
       toast.warning("No Wallet", "Please connect your wallet.");
       return;
