@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
-import { CONTRACT_ADDRESS, CONTRACT_ABI } from "../constants";
+import { CONTRACT_ADDRESS, CONTRACT_ABI, CHAIN_ID, RPC_URL } from "../constants";
 import CopyButton from "../components/CopyButton";
 import StatsCards from "../components/StatsCards";
 import QRGenerator from "../components/QRGenerator";
@@ -160,18 +160,20 @@ export default function AdminPage() {
         try {
           await window.ethereum.request({
             method: "wallet_switchEthereumChain",
-            params: [{ chainId: "0x7a69" }],
+            params: [{ chainId: CHAIN_ID }],
           });
         } catch (switchError) {
           if (switchError.code === 4902) {
             try {
+              const chainName = CHAIN_ID === "0xaa36a7" ? "Ethereum Sepolia" : "Hardhat Localhost";
+              const rpcUrls = CHAIN_ID === "0xaa36a7" ? [RPC_URL] : ["http://127.0.0.1:8545/"];
               await window.ethereum.request({
                 method: "wallet_addEthereumChain",
                 params: [
                   {
-                    chainId: "0x7a69",
-                    chainName: "Hardhat Localhost",
-                    rpcUrls: ["http://127.0.0.1:8545/"],
+                    chainId: CHAIN_ID,
+                    chainName: chainName,
+                    rpcUrls: rpcUrls,
                     nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
                   },
                 ],
@@ -282,7 +284,7 @@ export default function AdminPage() {
       try {
         await window.ethereum.request({
           method: "wallet_switchEthereumChain",
-          params: [{ chainId: "0x7a69" }],
+          params: [{ chainId: CHAIN_ID }],
         });
       } catch (switchError) {
         console.error("Network switch failed", switchError);
