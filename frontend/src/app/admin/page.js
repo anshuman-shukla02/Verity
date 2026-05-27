@@ -298,6 +298,11 @@ export default function AdminPage() {
         body: formData,
       });
 
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || `Server responded with status ${res.status}`);
+      }
+
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
 
